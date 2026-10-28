@@ -25,17 +25,23 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.CalendarToday
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Savings
 import androidx.compose.material.icons.filled.Warning
 import android.app.DatePickerDialog
-import androidx.compose.material.icons.filled.CalendarToday
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
@@ -43,6 +49,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -50,6 +57,7 @@ import androidx.compose.material3.SheetState
 import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.runtime.Composable
@@ -82,16 +90,19 @@ fun CategoryBudgetSheet(
   onPrevMonth: () -> Unit,
   onNextMonth: () -> Unit,
   onSelectMonth: (String) -> Unit,
-  onSaveBudget: (category: String, amount: Double, month: String) -> Unit,
-  onDeleteBudget: (budgetId: String, categoryName: String) -> Unit,
+  onSaveBudget: (category: String, amount: Double, month: String, oldBudgetId: String?, oldCategory: String?, oldMonth: String?) -> Unit,
+  onDeleteBudget: (budgetId: String, categoryName: String, month: String) -> Unit,
   onDismiss: () -> Unit,
   sheetState: SheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 ) {
   val context = LocalContext.current
   var showAddForm by remember { mutableStateOf(budgetStatuses.isEmpty()) }
+  var editingBudgetItem by remember { mutableStateOf<CategoryBudgetStatus?>(null) }
+  var budgetToDelete by remember { mutableStateOf<CategoryBudgetStatus?>(null) }
   var selectedCategory by remember { mutableStateOf("Belanja") }
   var formTargetMonth by remember(selectedMonth) { mutableStateOf(selectedMonth) }
   var amountText by remember { mutableStateOf("") }
+  var categoryDropdownExpanded by remember { mutableStateOf(false) }
   var validationError by remember { mutableStateOf<String?>(null) }
   var showMonthPickerDialogForHeader by remember { mutableStateOf(false) }
   var showMonthPickerDialogForForm by remember { mutableStateOf(false) }
@@ -258,12 +269,33 @@ fun CategoryBudgetSheet(
       Spacer(modifier = Modifier.height(14.dp))
 
       // Active Budget Items List for Selected Month
-      Text(
-        text = "Anggaran Bulan $selectedMonthLabel (${budgetStatuses.size})",
-        style = MaterialTheme.typography.titleSmall,
-        fontWeight = FontWeight.Bold,
-        color = MaterialTheme.colorScheme.onSurface
-      )
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+      ) {
+        Text(
+          text = "Anggaran Bulan $selectedMonthLabel (${budgetStatuses.size})",
+          style = MaterialTheme.typography.titleSmall,
+          fontWeight = FontWeight.Bold,
+          color = MaterialTheme.colorScheme.onSurface
+        )
+        if (budgetStatuses.size == 1) {
+          TextButton(
+            onClick = { budgetToDelete = budgetStatuses.first() },
+            modifier = Modifier.testTag("delete_single_budget_btn")
+          ) {
+            Icon(
+              Icons.Default.Delete,
+              contentDescription = null,
+              tint = ExpenseRed,
+              modifier = Modifier.size(16.dp)
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+            Text("Hapus Budget", color = ExpenseRed, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+          }
+        }
+      }
       Spacer(modifier = Modifier.height(8.dp))
 
       if (budgetStatuses.isEmpty()) {
@@ -318,7 +350,10 @@ fun CategoryBudgetSheet(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
               ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                  verticalAlignment = Alignment.CenterVertically,
+                  modifier = Modifier.weight(1f)
+                ) {
                   Box(
                     modifier = Modifier
                       .size(36.dp)
@@ -348,33 +383,41 @@ fun CategoryBudgetSheet(
                   }
                 }
 
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                  verticalAlignment = Alignment.CenterVertically,
+                  horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
                   // Edit quick action
                   IconButton(
                     onClick = {
+                      editingBudgetItem = item
                       selectedCategory = item.categoryName
                       amountText = item.allocatedBudget.toLong().toString()
-                      formTargetMonth = selectedMonth
+                      formTargetMonth = item.month.ifBlank { selectedMonth }
                       showAddForm = true
                     },
-                    modifier = Modifier.size(32.dp)
+                    modifier = Modifier
+                      .size(44.dp)
+                      .testTag("edit_budget_${item.categoryName}")
                   ) {
                     Icon(
                       Icons.Default.Edit,
                       contentDescription = "Edit budget",
-                      modifier = Modifier.size(16.dp),
+                      modifier = Modifier.size(18.dp),
                       tint = MaterialTheme.colorScheme.primary
                     )
                   }
                   // Delete quick action
                   IconButton(
-                    onClick = { onDeleteBudget(item.budgetId, item.categoryName) },
-                    modifier = Modifier.size(32.dp)
+                    onClick = { budgetToDelete = item },
+                    modifier = Modifier
+                      .size(44.dp)
+                      .testTag("delete_budget_${item.categoryName}")
                   ) {
                     Icon(
                       Icons.Default.Delete,
                       contentDescription = "Hapus budget",
-                      modifier = Modifier.size(16.dp),
+                      modifier = Modifier.size(18.dp),
                       tint = ExpenseRed
                     )
                   }
@@ -469,12 +512,38 @@ fun CategoryBudgetSheet(
           )
         ) {
           Column(modifier = Modifier.padding(16.dp)) {
-            Text(
-              text = "Tetapkan Budget Kategori",
-              style = MaterialTheme.typography.titleMedium,
-              fontWeight = FontWeight.Bold,
-              color = MaterialTheme.colorScheme.primary
-            )
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.SpaceBetween,
+              verticalAlignment = Alignment.CenterVertically
+            ) {
+              Column(modifier = Modifier.weight(1f)) {
+                Text(
+                  text = if (editingBudgetItem != null) "Edit Budget Kategori" else "Tetapkan Budget Kategori",
+                  style = MaterialTheme.typography.titleMedium,
+                  fontWeight = FontWeight.Bold,
+                  color = MaterialTheme.colorScheme.primary
+                )
+                if (editingBudgetItem != null) {
+                  Text(
+                    text = "Mengubah budget ${editingBudgetItem?.categoryName} (${FormatUtils.formatMonthLabel(editingBudgetItem?.month ?: selectedMonth)})",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                  )
+                }
+              }
+              if (editingBudgetItem != null) {
+                TextButton(
+                  onClick = {
+                    editingBudgetItem = null
+                    amountText = ""
+                    if (budgetStatuses.isNotEmpty()) showAddForm = false
+                  }
+                ) {
+                  Text("Batal Edit", color = ExpenseRed, fontSize = 12.sp)
+                }
+              }
+            }
 
             Spacer(modifier = Modifier.height(10.dp))
 
@@ -635,35 +704,99 @@ fun CategoryBudgetSheet(
             )
             Spacer(modifier = Modifier.height(6.dp))
 
-            FlowRow(
-              modifier = Modifier.fillMaxWidth(),
-              horizontalArrangement = Arrangement.spacedBy(6.dp),
-              verticalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-              val expenseCategories = CategoryRegistry.defaultCategories.filter {
-                it.defaultType == TransactionType.EXPENSE || it.name == "Lainnya"
-              }
+            val expenseCategories = CategoryRegistry.defaultCategories.filter {
+              it.defaultType == TransactionType.EXPENSE || it.name == "Lainnya"
+            }
+            val currentCategoryItem = CategoryRegistry.defaultCategories.firstOrNull {
+              it.name.equals(selectedCategory, ignoreCase = true)
+            }
 
-              expenseCategories.forEach { cat ->
-                val isSelected = selectedCategory.equals(cat.name, ignoreCase = true)
-                FilterChip(
-                  selected = isSelected,
-                  onClick = { selectedCategory = cat.name },
-                  label = { Text(cat.name, style = MaterialTheme.typography.labelSmall) },
-                  leadingIcon = {
-                    Icon(
-                      imageVector = cat.icon,
-                      contentDescription = null,
-                      tint = if (isSelected) MaterialTheme.colorScheme.onPrimary else cat.color,
-                      modifier = Modifier.size(16.dp)
-                    )
-                  },
-                  colors = FilterChipDefaults.filterChipColors(
-                    selectedContainerColor = MaterialTheme.colorScheme.primary,
-                    selectedLabelColor = MaterialTheme.colorScheme.onPrimary
-                  ),
-                  shape = RoundedCornerShape(8.dp)
-                )
+            ExposedDropdownMenuBox(
+              expanded = categoryDropdownExpanded,
+              onExpandedChange = { categoryDropdownExpanded = !categoryDropdownExpanded },
+              modifier = Modifier
+                .fillMaxWidth()
+                .testTag("budget_category_dropdown_box")
+            ) {
+              OutlinedTextField(
+                value = selectedCategory,
+                onValueChange = {},
+                readOnly = true,
+                leadingIcon = {
+                  if (currentCategoryItem != null) {
+                    Box(
+                      modifier = Modifier
+                        .size(32.dp)
+                        .clip(CircleShape)
+                        .background(currentCategoryItem.color.copy(alpha = 0.15f)),
+                      contentAlignment = Alignment.Center
+                    ) {
+                      Icon(
+                        imageVector = currentCategoryItem.icon,
+                        contentDescription = null,
+                        tint = currentCategoryItem.color,
+                        modifier = Modifier.size(18.dp)
+                      )
+                    }
+                  }
+                },
+                trailingIcon = {
+                  ExposedDropdownMenuDefaults.TrailingIcon(expanded = categoryDropdownExpanded)
+                },
+                colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier
+                  .menuAnchor(MenuAnchorType.PrimaryNotEditable)
+                  .fillMaxWidth()
+                  .testTag("budget_category_dropdown_field")
+              )
+
+              ExposedDropdownMenu(
+                expanded = categoryDropdownExpanded,
+                onDismissRequest = { categoryDropdownExpanded = false }
+              ) {
+                expenseCategories.forEach { cat ->
+                  val isSelected = selectedCategory.equals(cat.name, ignoreCase = true)
+                  DropdownMenuItem(
+                    text = {
+                      Text(
+                        text = cat.name,
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                        color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                      )
+                    },
+                    leadingIcon = {
+                      Box(
+                        modifier = Modifier
+                          .size(28.dp)
+                          .clip(CircleShape)
+                          .background(cat.color.copy(alpha = 0.15f)),
+                        contentAlignment = Alignment.Center
+                      ) {
+                        Icon(
+                          imageVector = cat.icon,
+                          contentDescription = null,
+                          tint = cat.color,
+                          modifier = Modifier.size(16.dp)
+                        )
+                      }
+                    },
+                    trailingIcon = if (isSelected) {
+                      {
+                        Icon(
+                          imageVector = Icons.Default.Check,
+                          contentDescription = "Terpilih",
+                          tint = MaterialTheme.colorScheme.primary,
+                          modifier = Modifier.size(18.dp)
+                        )
+                      }
+                    } else null,
+                    onClick = {
+                      selectedCategory = cat.name
+                      categoryDropdownExpanded = false
+                    }
+                  )
+                }
               }
             }
 
@@ -721,9 +854,15 @@ fun CategoryBudgetSheet(
               modifier = Modifier.fillMaxWidth(),
               horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-              if (budgetStatuses.isNotEmpty()) {
-                Button(
-                  onClick = { showAddForm = false },
+              if (budgetStatuses.isNotEmpty() || editingBudgetItem != null) {
+                OutlinedButton(
+                  onClick = {
+                    editingBudgetItem = null
+                    amountText = ""
+                    if (budgetStatuses.isNotEmpty()) {
+                      showAddForm = false
+                    }
+                  },
                   modifier = Modifier.weight(1f),
                   shape = RoundedCornerShape(10.dp)
                 ) {
@@ -738,8 +877,16 @@ fun CategoryBudgetSheet(
                     validationError = "Silakan masukkan nominal budget yang lebih dari 0"
                     return@Button
                   }
-                  onSaveBudget(selectedCategory, amt, formTargetMonth)
+                  onSaveBudget(
+                    selectedCategory,
+                    amt,
+                    formTargetMonth,
+                    editingBudgetItem?.budgetId,
+                    editingBudgetItem?.categoryName,
+                    editingBudgetItem?.month
+                  )
                   onSelectMonth(formTargetMonth)
+                  editingBudgetItem = null
                   showAddForm = false
                   amountText = ""
                 },
@@ -748,7 +895,10 @@ fun CategoryBudgetSheet(
                   .testTag("save_category_budget_button"),
                 shape = RoundedCornerShape(10.dp)
               ) {
-                Text("Simpan Budget", fontWeight = FontWeight.Bold)
+                Text(
+                  text = if (editingBudgetItem != null) "Perbarui Budget" else "Simpan Budget",
+                  fontWeight = FontWeight.Bold
+                )
               }
             }
           }
@@ -781,6 +931,53 @@ fun CategoryBudgetSheet(
       onMonthSelected = { chosenMonth ->
         onSelectMonth(chosenMonth)
         showMonthPickerDialogForHeader = false
+      }
+    )
+  }
+
+  // Delete Budget Confirmation Dialog
+  budgetToDelete?.let { item ->
+    AlertDialog(
+      onDismissRequest = { budgetToDelete = null },
+      icon = {
+        Icon(
+          Icons.Default.Warning,
+          contentDescription = null,
+          tint = ExpenseRed,
+          modifier = Modifier.size(28.dp)
+        )
+      },
+      title = {
+        Text("Hapus Budget ${item.categoryName}?")
+      },
+      text = {
+        Text(
+          "Apakah Anda yakin ingin menghapus penetapan budget untuk kategori ${item.categoryName} di bulan ${FormatUtils.formatMonthLabel(item.month.ifBlank { selectedMonth })} sebesar ${FormatUtils.formatRupiah(item.allocatedBudget)}?"
+        )
+      },
+      confirmButton = {
+        Button(
+          onClick = {
+            onDeleteBudget(item.budgetId, item.categoryName, item.month.ifBlank { selectedMonth })
+            if (editingBudgetItem?.budgetId == item.budgetId || editingBudgetItem?.categoryName == item.categoryName) {
+              editingBudgetItem = null
+              amountText = ""
+            }
+            if (budgetStatuses.size <= 1) {
+              showAddForm = false
+            }
+            budgetToDelete = null
+          },
+          colors = ButtonDefaults.buttonColors(containerColor = ExpenseRed),
+          modifier = Modifier.testTag("confirm_delete_budget_button")
+        ) {
+          Text("Ya, Hapus", color = Color.White, fontWeight = FontWeight.Bold)
+        }
+      },
+      dismissButton = {
+        TextButton(onClick = { budgetToDelete = null }) {
+          Text("Batal")
+        }
       }
     )
   }

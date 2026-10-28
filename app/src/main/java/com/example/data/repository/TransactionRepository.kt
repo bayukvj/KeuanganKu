@@ -243,14 +243,60 @@ class TransactionRepository(
     }
   }
 
-  suspend fun deleteCategoryBudget(budgetId: String): Result<Unit> {
+  suspend fun deleteCategoryBudget(budgetId: String, categoryName: String = "", month: String = ""): Result<Unit> {
     val uid = requireUserId()
-    val docRef = db.collection("users").document(uid).collection("budgets").document(budgetId)
     return try {
-      docRef.delete().await()
+      val collectionRef = db.collection("users").document(uid).collection("budgets")
+
+      // 1. Delete directly by budgetId if provided
+      if (budgetId.isNotBlank()) {
+        try {
+          collectionRef.document(budgetId).delete().await()
+        } catch (_: Exception) {}
+      }
+
+      val cleanMonth = month.trim()
+      val safeCat = categoryName.lowercase().replace(Regex("[^a-z0-9_]"), "_").take(25)
+
+      // 2. Delete by computed ID variants
+      if (safeCat.isNotBlank()) {
+        val altId1 = if (cleanMonth.isNotBlank()) "b_" + cleanMonth.replace("-", "_") + "_" + safeCat else "budget_" + safeCat
+        val altId2 = "budget_" + safeCat
+        if (altId1 != budgetId) {
+          try { collectionRef.document(altId1).delete().await() } catch (_: Exception) {}
+        }
+        if (altId2 != budgetId) {
+          try { collectionRef.document(altId2).delete().await() } catch (_: Exception) {}
+        }
+      }
+
+      // 3. Scan and delete all matching documents in the collection to ensure no lingering/orphan budgets remain
+      try {
+        val snapshot = collectionRef.get().await()
+        val targetCatLower = categoryName.trim().lowercase()
+        val targetMonthFormatted = cleanMonth.replace("-", "_")
+        for (doc in snapshot.documents) {
+          val docCat = (doc.getString("category") ?: "").trim().lowercase()
+          val docMonth = (doc.getString("month") ?: "").trim()
+          val idMatches = budgetId.isNotBlank() && doc.id == budgetId
+          val categoryMatches = targetCatLower.isNotBlank() && (
+            docCat == targetCatLower ||
+            docCat == safeCat ||
+            doc.id.endsWith(safeCat)
+          )
+          val monthMatches = cleanMonth.isBlank() || docMonth.isBlank() || docMonth == cleanMonth || doc.id.contains(targetMonthFormatted)
+
+          if (idMatches || (categoryMatches && monthMatches)) {
+            try {
+              doc.reference.delete().await()
+            } catch (_: Exception) {}
+          }
+        }
+      } catch (_: Exception) {}
+
       Result.success(Unit)
     } catch (e: Exception) {
-      handleFirestoreError(e, OperationType.DELETE, docRef.path)
+      handleFirestoreError(e, OperationType.DELETE, "users/$uid/budgets/$budgetId")
       Result.failure(e)
     }
   }

@@ -542,9 +542,19 @@ class FinanceViewModel(
     _selectedBudgetMonth.value = FormatUtils.toMonthKey(cal.get(Calendar.YEAR), cal.get(Calendar.MONTH))
   }
 
-  fun saveCategoryBudget(category: String, amount: Double, month: String = _selectedBudgetMonth.value) {
+  fun saveCategoryBudget(
+    category: String,
+    amount: Double,
+    month: String = _selectedBudgetMonth.value,
+    oldBudgetId: String? = null,
+    oldCategory: String? = null,
+    oldMonth: String? = null
+  ) {
     viewModelScope.launch {
       val targetMonth = month.ifBlank { _selectedBudgetMonth.value }
+      if (!oldCategory.isNullOrBlank() && (oldCategory != category || (!oldMonth.isNullOrBlank() && oldMonth != targetMonth))) {
+        repository.deleteCategoryBudget(oldBudgetId ?: "", oldCategory, oldMonth ?: targetMonth)
+      }
       val result = repository.saveCategoryBudget(category, amount, targetMonth)
       if (result.isSuccess) {
         val monthLabel = FormatUtils.formatMonthLabel(targetMonth)
@@ -555,9 +565,9 @@ class FinanceViewModel(
     }
   }
 
-  fun deleteCategoryBudget(budgetId: String, categoryName: String) {
+  fun deleteCategoryBudget(budgetId: String, categoryName: String, month: String = _selectedBudgetMonth.value) {
     viewModelScope.launch {
-      val result = repository.deleteCategoryBudget(budgetId)
+      val result = repository.deleteCategoryBudget(budgetId, categoryName, month)
       if (result.isSuccess) {
         _userMessage.value = "Budget untuk $categoryName telah dihapus"
       } else {

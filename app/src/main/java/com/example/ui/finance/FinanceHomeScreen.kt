@@ -154,6 +154,7 @@ fun FinanceHomeScreen(
   var showSettingsDialog by remember { mutableStateOf(false) }
   var showSignOutConfirm by remember { mutableStateOf(false) }
   var showDeleteConfirm by remember { mutableStateOf<Transaction?>(null) }
+  var dashboardBudgetToDelete by remember { mutableStateOf<CategoryBudgetStatus?>(null) }
   var showTopMoreMenu by remember { mutableStateOf(false) }
 
   // Android 13+ Notification Permission Launcher
@@ -446,6 +447,9 @@ fun FinanceHomeScreen(
             selectedCategory = uiState.selectedCategory,
             onSelectCategory = { cat ->
               if (uiState.selectedCategory == cat) viewModel.setCategory(null) else viewModel.setCategory(cat)
+            },
+            onDeleteBudget = { budget ->
+              dashboardBudgetToDelete = budget
             }
           )
         }
@@ -634,13 +638,57 @@ fun FinanceHomeScreen(
       onPrevMonth = { viewModel.prevBudgetMonth() },
       onNextMonth = { viewModel.nextBudgetMonth() },
       onSelectMonth = { viewModel.setSelectedBudgetMonth(it) },
-      onSaveBudget = { category, amount, month ->
-        viewModel.saveCategoryBudget(category, amount, month)
+      onSaveBudget = { category, amount, month, oldBudgetId, oldCategory, oldMonth ->
+        viewModel.saveCategoryBudget(category, amount, month, oldBudgetId, oldCategory, oldMonth)
       },
-      onDeleteBudget = { budgetId, categoryName ->
-        viewModel.deleteCategoryBudget(budgetId, categoryName)
+      onDeleteBudget = { budgetId, categoryName, month ->
+        viewModel.deleteCategoryBudget(budgetId, categoryName, month)
       },
       onDismiss = { showCategoryBudgetSheet = false }
+    )
+  }
+
+  // Dashboard Budget Quick Delete Confirmation Dialog
+  dashboardBudgetToDelete?.let { item ->
+    AlertDialog(
+      onDismissRequest = { dashboardBudgetToDelete = null },
+      icon = {
+        Icon(
+          imageVector = Icons.Default.Warning,
+          contentDescription = null,
+          tint = ExpenseRed,
+          modifier = Modifier.size(28.dp)
+        )
+      },
+      title = {
+        Text("Hapus Budget ${item.categoryName}?")
+      },
+      text = {
+        Text(
+          "Apakah Anda yakin ingin menghapus penetapan budget untuk kategori ${item.categoryName} di bulan ${FormatUtils.formatMonthLabel(item.month.ifBlank { uiState.selectedBudgetMonth })} sebesar ${FormatUtils.formatRupiah(item.allocatedBudget)}?"
+        )
+      },
+      confirmButton = {
+        Button(
+          onClick = {
+            viewModel.deleteCategoryBudget(
+              budgetId = item.budgetId,
+              categoryName = item.categoryName,
+              month = item.month.ifBlank { uiState.selectedBudgetMonth }
+            )
+            dashboardBudgetToDelete = null
+          },
+          colors = ButtonDefaults.buttonColors(containerColor = ExpenseRed),
+          modifier = Modifier.testTag("confirm_dash_delete_budget_button")
+        ) {
+          Text("Ya, Hapus", color = Color.White, fontWeight = FontWeight.Bold)
+        }
+      },
+      dismissButton = {
+        TextButton(onClick = { dashboardBudgetToDelete = null }) {
+          Text("Batal")
+        }
+      }
     )
   }
 
@@ -884,7 +932,8 @@ private fun CategoryBudgetDashboardSection(
   onNextMonth: () -> Unit,
   onManageBudgets: () -> Unit,
   selectedCategory: String?,
-  onSelectCategory: (String) -> Unit
+  onSelectCategory: (String) -> Unit,
+  onDeleteBudget: (CategoryBudgetStatus) -> Unit = {}
 ) {
   Card(
     modifier = Modifier
@@ -1073,30 +1122,51 @@ private fun CategoryBudgetDashboardSection(
             ) {
               Column(modifier = Modifier.padding(12.dp)) {
                 Row(
+                  modifier = Modifier.fillMaxWidth(),
+                  horizontalArrangement = Arrangement.SpaceBetween,
                   verticalAlignment = Alignment.CenterVertically
                 ) {
-                  Box(
+                  Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f, fill = false)
+                  ) {
+                    Box(
+                      modifier = Modifier
+                        .size(28.dp)
+                        .clip(CircleShape)
+                        .background(cat.color.copy(alpha = 0.2f)),
+                      contentAlignment = Alignment.Center
+                    ) {
+                      Icon(
+                        imageVector = cat.icon,
+                        contentDescription = null,
+                        tint = cat.color,
+                        modifier = Modifier.size(16.dp)
+                      )
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                      text = item.categoryName,
+                      style = MaterialTheme.typography.bodyMedium,
+                      fontWeight = FontWeight.Bold,
+                      maxLines = 1,
+                      overflow = TextOverflow.Ellipsis
+                    )
+                  }
+
+                  IconButton(
+                    onClick = { onDeleteBudget(item) },
                     modifier = Modifier
                       .size(28.dp)
-                      .clip(CircleShape)
-                      .background(cat.color.copy(alpha = 0.2f)),
-                    contentAlignment = Alignment.Center
+                      .testTag("dash_delete_budget_${item.categoryName}")
                   ) {
                     Icon(
-                      imageVector = cat.icon,
-                      contentDescription = null,
-                      tint = cat.color,
+                      imageVector = Icons.Default.Delete,
+                      contentDescription = "Hapus budget ${item.categoryName}",
+                      tint = ExpenseRed.copy(alpha = 0.85f),
                       modifier = Modifier.size(16.dp)
                     )
                   }
-                  Spacer(modifier = Modifier.width(8.dp))
-                  Text(
-                    text = item.categoryName,
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                  )
                 }
 
                 Spacer(modifier = Modifier.height(8.dp))

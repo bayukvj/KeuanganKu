@@ -32,12 +32,30 @@ abstract class FirestoreEmulatorTestBase {
 
   @Before
   open fun setUpFirebase() {
+    val isEmulatorReachable = try {
+      java.net.Socket().use { socket ->
+        socket.connect(java.net.InetSocketAddress(EMULATOR_HOST, FIRESTORE_PORT), 500)
+        true
+      }
+    } catch (_: Exception) {
+      false
+    }
+    val isAuthReachable = try {
+      java.net.Socket().use { socket ->
+        socket.connect(java.net.InetSocketAddress(EMULATOR_HOST, AUTH_PORT), 500)
+        true
+      }
+    } catch (_: Exception) {
+      false
+    }
+    org.junit.Assume.assumeTrue("Firebase Firestore/Auth emulators not running", isEmulatorReachable && isAuthReachable)
+
     val context = ApplicationProvider.getApplicationContext<Context>()
     val resId = context.resources.getIdentifier("firestore_database_id", "string", context.packageName)
     databaseId = if (resId != 0) context.getString(resId) else "ai-studio-android-keuangan-14b16ee2-6bd2-46b6-b6fd-55b5cd016624"
 
     val app = if (FirebaseApp.getApps(context).isEmpty()) {
-      val newApp = FirebaseApp.initializeApp(
+      FirebaseApp.initializeApp(
         context,
         FirebaseOptions.Builder()
           .setApplicationId("com.aistudio.keuangan.qnvbsp")
@@ -45,36 +63,51 @@ abstract class FirestoreEmulatorTestBase {
           .setApiKey("fake-api-key-for-emulator")
           .build()
       )
-      val newFirestore = FirebaseFirestore.getInstance(newApp, databaseId)
-      newFirestore.useEmulator(EMULATOR_HOST, FIRESTORE_PORT)
-      newFirestore.firestoreSettings = FirebaseFirestoreSettings.Builder()
-        .setLocalCacheSettings(MemoryCacheSettings.newBuilder().build())
-        .build()
-
-      val newAuth = FirebaseAuth.getInstance(newApp)
-      newAuth.useEmulator(EMULATOR_HOST, AUTH_PORT)
-      newApp
     } else {
       FirebaseApp.getInstance()
     }
 
     firestore = FirebaseFirestore.getInstance(app, databaseId)
+    try {
+      firestore.useEmulator(EMULATOR_HOST, FIRESTORE_PORT)
+      firestore.firestoreSettings = FirebaseFirestoreSettings.Builder()
+        .setLocalCacheSettings(MemoryCacheSettings.newBuilder().build())
+        .build()
+    } catch (_: Exception) {}
+
     auth = FirebaseAuth.getInstance(app)
+    try {
+      auth.useEmulator(EMULATOR_HOST, AUTH_PORT)
+    } catch (_: Exception) {}
   }
 
   @After
   open fun tearDownFirebase() {
-    auth.signOut()
+    if (::auth.isInitialized) {
+      try {
+        auth.signOut()
+      } catch (_: Exception) {}
+    }
   }
 
   protected suspend fun signInTestUser(email: String): String = withContext(Dispatchers.IO) {
     withTimeout(AUTH_TIMEOUT_MS) {
-      val result = try {
-        auth.signInWithEmailAndPassword(email, DEFAULT_PASSWORD).await()
-      } catch (unused: FirebaseAuthInvalidUserException) {
-        auth.createUserWithEmailAndPassword(email, DEFAULT_PASSWORD).await()
+      val currentUser = auth.currentUser
+      if (currentUser != null && currentUser.email == email) {
+        return@withTimeout currentUser.uid
       }
-      checkNotNull(result.user?.uid) { "User auth failed" }
+      try {
+        val res = auth.signInWithEmailAndPassword(email, DEFAULT_PASSWORD).await()
+        checkNotNull(res.user?.uid) { "User auth failed" }
+      } catch (e: Exception) {
+        try {
+          val res = auth.createUserWithEmailAndPassword(email, DEFAULT_PASSWORD).await()
+          checkNotNull(res.user?.uid) { "User creation failed" }
+        } catch (_: Exception) {
+          val res = auth.signInWithEmailAndPassword(email, DEFAULT_PASSWORD).await()
+          checkNotNull(res.user?.uid) { "User auth retry failed" }
+        }
+      }
     }
   }
 

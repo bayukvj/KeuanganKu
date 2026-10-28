@@ -119,15 +119,13 @@ fun AuthScreen(
         Box(
           modifier = Modifier
             .size(96.dp)
-            .clip(RoundedCornerShape(28.dp))
-            .background(MaterialTheme.colorScheme.primary),
+            .clip(RoundedCornerShape(24.dp)),
           contentAlignment = Alignment.Center
         ) {
-          Icon(
-            imageVector = Icons.Default.AccountBalanceWallet,
+          Image(
+            painter = painterResource(id = R.drawable.ic_app_icon_custom),
             contentDescription = "Logo KeuanganKu",
-            tint = MaterialTheme.colorScheme.onPrimary,
-            modifier = Modifier.size(52.dp)
+            modifier = Modifier.fillMaxSize()
           )
         }
 
