@@ -1,0 +1,124 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Default-deny catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isValidUser(data) {
+      return data.userId is string && data.userId.size() <= 128 &&
+             (!('displayName' in data) || (data.displayName is string && data.displayName.size() <= 100)) &&
+             (!('email' in data) || (data.email is string && data.email.size() <= 100)) &&
+             (!('monthlyBudget' in data) || ((data.monthlyBudget is number || data.monthlyBudget is int) && data.monthlyBudget >= 0)) &&
+             (!('currency' in data) || (data.currency is string && data.currency.size() <= 10));
+    }
+
+    function isValidTransaction(data) {
+      return data.userId is string && data.userId.size() <= 128 &&
+             data.type in ['INCOME', 'EXPENSE'] &&
+             (data.amount is number || data.amount is int) && data.amount > 0 &&
+             data.category is string && data.category.size() >= 1 && data.category.size() <= 50 &&
+             data.title is string && data.title.size() >= 1 && data.title.size() <= 100 &&
+             (!('note' in data) || (data.note is string && data.note.size() <= 500)) &&
+             (data.date is number || data.date is int) && data.date > 0 &&
+             (!('account' in data) || (data.account is string && data.account.size() <= 50));
+    }
+
+    function isValidBudget(data) {
+      return data.userId is string && data.userId.size() <= 128 &&
+             data.category is string && data.category.size() >= 1 && data.category.size() <= 50 &&
+             (!('month' in data) || (data.month is string && data.month.size() <= 10)) &&
+             (data.amount is number || data.amount is int) && data.amount > 0;
+    }
+
+    match /users/{userId} {
+      allow get: if isSignedIn() && request.auth.uid == userId;
+
+      allow create: if isSignedIn() &&
+                       request.auth.uid == userId &&
+                       incoming().userId == request.auth.uid &&
+                       incoming().keys().hasAll(['userId', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['userId', 'displayName', 'email', 'monthlyBudget', 'currency', 'createdAt', 'updatedAt']) &&
+                       incoming().createdAt is timestamp && incoming().createdAt <= request.time &&
+                       incoming().updatedAt is timestamp && incoming().updatedAt <= request.time &&
+                       isValidUser(incoming());
+
+      allow update: if isSignedIn() &&
+                       request.auth.uid == userId &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().updatedAt is timestamp && incoming().updatedAt <= request.time &&
+                       isValidUser(incoming()) &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'email', 'monthlyBudget', 'currency', 'updatedAt']);
+
+      allow delete: if isSignedIn() && request.auth.uid == userId;
+
+      match /transactions/{transactionId} {
+        allow get, list: if isSignedIn() && request.auth.uid == userId;
+
+        allow create: if isSignedIn() &&
+                         request.auth.uid == userId &&
+                         isValidId(transactionId) &&
+                         incoming().userId == request.auth.uid &&
+                         incoming().keys().hasAll(['userId', 'type', 'amount', 'category', 'title', 'date', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['userId', 'type', 'amount', 'category', 'title', 'note', 'date', 'account', 'createdAt', 'updatedAt']) &&
+                         incoming().createdAt is timestamp && incoming().createdAt <= request.time &&
+                         incoming().updatedAt is timestamp && incoming().updatedAt <= request.time &&
+                         isValidTransaction(incoming());
+
+        allow update: if isSignedIn() &&
+                         request.auth.uid == userId &&
+                         isValidId(transactionId) &&
+                         incoming().userId == existing().userId &&
+                         incoming().createdAt == existing().createdAt &&
+                         incoming().updatedAt is timestamp && incoming().updatedAt <= request.time &&
+                         isValidTransaction(incoming()) &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['type', 'amount', 'category', 'title', 'note', 'date', 'account', 'updatedAt']);
+
+        allow delete: if isSignedIn() && request.auth.uid == userId && isValidId(transactionId);
+      }
+
+      match /budgets/{budgetId} {
+        allow get, list: if isSignedIn() && request.auth.uid == userId;
+
+        allow create: if isSignedIn() &&
+                         request.auth.uid == userId &&
+                         isValidId(budgetId) &&
+                         incoming().userId == request.auth.uid &&
+                         incoming().keys().hasAll(['userId', 'category', 'amount', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['userId', 'category', 'amount', 'month', 'createdAt', 'updatedAt']) &&
+                         incoming().createdAt is timestamp && incoming().createdAt <= request.time &&
+                         incoming().updatedAt is timestamp && incoming().updatedAt <= request.time &&
+                         isValidBudget(incoming());
+
+        allow update: if isSignedIn() &&
+                         request.auth.uid == userId &&
+                         isValidId(budgetId) &&
+                         incoming().userId == existing().userId &&
+                         incoming().createdAt == existing().createdAt &&
+                         incoming().updatedAt is timestamp && incoming().updatedAt <= request.time &&
+                         isValidBudget(incoming()) &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['category', 'amount', 'month', 'updatedAt']);
+
+        allow delete: if isSignedIn() && request.auth.uid == userId && isValidId(budgetId);
+      }
+    }
+  }
+}

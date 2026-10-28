@@ -1,0 +1,64 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "User account settings including optional monthly budget",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Unique user ID matching auth UID" },
+        "displayName": { "type": "string", "description": "User display name" },
+        "email": { "type": "string", "description": "User email address" },
+        "monthlyBudget": { "type": "number", "description": "Target monthly expense budget in IDR" },
+        "currency": { "type": "string", "description": "Currency code e.g. IDR" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Creation timestamp via serverTimestamp()" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Last update timestamp via serverTimestamp()" }
+      },
+      "required": ["userId", "createdAt", "updatedAt"]
+    },
+    "Transaction": {
+      "title": "Financial Transaction",
+      "description": "Income or expense record logged by the user",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Owner user ID" },
+        "type": { "type": "string", "enum": ["INCOME", "EXPENSE"], "description": "Transaction type" },
+        "amount": { "type": "number", "description": "Monetary value" },
+        "category": { "type": "string", "description": "Category name such as Belanja, Pendidikan, Makanan, Transportasi, etc." },
+        "title": { "type": "string", "description": "Short title or description of the transaction" },
+        "note": { "type": "string", "description": "Optional notes or details" },
+        "date": { "type": "number", "description": "Transaction date in epoch milliseconds" },
+        "account": { "type": "string", "description": "Payment source: Tunai, Bank, E-Wallet" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Document creation timestamp via serverTimestamp()" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Document update timestamp via serverTimestamp()" }
+      },
+      "required": ["userId", "type", "amount", "category", "title", "date", "createdAt", "updatedAt"]
+    },
+    "CategoryBudget": {
+      "title": "Category Budget",
+      "description": "Budget limit defined for a specific spending category (e.g. Belanja, Pendidikan)",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Owner user ID" },
+        "category": { "type": "string", "description": "Category name e.g. Belanja, Pendidikan" },
+        "amount": { "type": "number", "description": "Allocated budget amount for this category in IDR" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Creation timestamp via serverTimestamp()" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Update timestamp via serverTimestamp()" }
+      },
+      "required": ["userId", "category", "amount", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "User profile and financial settings"
+    },
+    "/users/{userId}/transactions/{transactionId}": {
+      "schema": { "$ref": "#/entities/Transaction" },
+      "description": "Individual income and expense transactions for each user"
+    },
+    "/users/{userId}/budgets/{budgetId}": {
+      "schema": { "$ref": "#/entities/CategoryBudget" },
+      "description": "Category-specific budgets allocated by the user"
+    }
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "name": "KeuanganKu",
+  "description": "Aplikasi pencatatan keuangan pribadi untuk mencatat pemasukan, pengeluaran, kategori transaksi, dan laporan saldo.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
